@@ -3,12 +3,20 @@ import { readFile, unlink } from 'fs/promises';
 import { join } from 'path';
 import { parse } from 'csv-parse/sync';
 
+interface CsvRecord {
+    [key: string]: string;
+}
+
+interface FieldMappings {
+    [key: string]: string;
+}
+
 export async function POST(
     request: Request,
     { params }: { params: { batchId: string } }
 ) {
     try {
-        const { mappings } = await request.json();
+        const { mappings } = await request.json() as { mappings: FieldMappings };
         const { batchId } = params;
 
         if (!mappings || !batchId) {
@@ -26,11 +34,11 @@ export async function POST(
         const records = parse(fileContent, {
             columns: true,
             skip_empty_lines: true
-        });
+        }) as CsvRecord[];
 
         // Transform and validate all records
-        const transformedData = records.map((record: any) => {
-            const transformedRecord: any = {};
+        const transformedData = records.map((record: CsvRecord) => {
+            const transformedRecord: CsvRecord = {};
             Object.entries(mappings).forEach(([systemField, csvColumn]) => {
                 if (csvColumn) {
                     transformedRecord[systemField] = record[csvColumn];

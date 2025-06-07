@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { parse } from "papaparse";
+import { CsvRow } from "@prisma/client";
+
+interface CsvRowWithData extends CsvRow {
+    rowData: {
+        [key: string]: string;
+    };
+}
 
 export async function POST(
     req: NextRequest,
@@ -17,21 +24,22 @@ export async function POST(
             include: { rows: true },
         });
 
-        if (!csvFile) {
-            return NextResponse.json({ error: "File not found" }, { status: 404 });
+        if (!csvFile || !csvFile.rows.length) {
+            return NextResponse.json({ error: "File not found or empty" }, { status: 404 });
         }
 
+        const rows = csvFile.rows as CsvRowWithData[];
         let reportData: any[] = [];
 
         switch (reportType) {
             case "summary":
                 // Generate summary statistics
-                const numericColumns = Object.keys(csvFile.rows[0].data).filter(
-                    (key) => !isNaN(Number(csvFile.rows[0].data[key]))
+                const numericColumns = Object.keys(rows[0].rowData).filter(
+                    (key) => !isNaN(Number(rows[0].rowData[key]))
                 );
 
                 reportData = numericColumns.map((column) => {
-                    const values = csvFile.rows.map((row) => Number(row.data[column]));
+                    const values = rows.map((row) => Number(row.rowData[column]));
                     const sum = values.reduce((a, b) => a + b, 0);
                     const avg = sum / values.length;
                     const max = Math.max(...values);
@@ -49,29 +57,29 @@ export async function POST(
 
             case "detailed":
                 // Generate detailed analysis
-                const columns = Object.keys(csvFile.rows[0].data);
+                const columns = Object.keys(rows[0].rowData);
                 reportData = columns.map((column) => {
                     const uniqueValues = new Set(
-                        csvFile.rows.map((row) => row.data[column])
+                        rows.map((row) => row.rowData[column])
                     );
                     return {
                         Column: column,
                         UniqueValues: uniqueValues.size,
-                        MostCommonValue: getMostCommonValue(csvFile.rows, column),
-                        HasNulls: csvFile.rows.some((row) => !row.data[column]),
+                        MostCommonValue: getMostCommonValue(rows, column),
+                        HasNulls: rows.some((row) => !row.rowData[column]),
                     };
                 });
                 break;
 
             case "custom":
                 // Generate custom analysis (example: data distribution)
-                const customColumns = Object.keys(csvFile.rows[0].data);
+                const customColumns = Object.keys(rows[0].rowData);
                 reportData = customColumns.map((column) => {
-                    const valueFrequency = getValueFrequency(csvFile.rows, column);
+                    const valueFrequency = getValueFrequency(rows, column);
                     return {
                         Column: column,
                         Distribution: JSON.stringify(valueFrequency),
-                        DataType: getDataType(csvFile.rows, column),
+                        DataType: getDataType(rows, column),
                     };
                 });
                 break;
@@ -94,10 +102,10 @@ export async function POST(
     }
 }
 
-function getMostCommonValue(rows: any[], column: string) {
+function getMostCommonValue(rows: CsvRowWithData[], column: string) {
     const frequency: { [key: string]: number } = {};
     rows.forEach((row) => {
-        const value = row.data[column];
+        const value = row.rowData[column];
         frequency[value] = (frequency[value] || 0) + 1;
     });
     return Object.entries(frequency).reduce((a, b) => 
@@ -105,17 +113,17 @@ function getMostCommonValue(rows: any[], column: string) {
     )[0];
 }
 
-function getValueFrequency(rows: any[], column: string) {
+function getValueFrequency(rows: CsvRowWithData[], column: string) {
     const frequency: { [key: string]: number } = {};
     rows.forEach((row) => {
-        const value = row.data[column];
+        const value = row.rowData[column];
         frequency[value] = (frequency[value] || 0) + 1;
     });
     return frequency;
 }
 
-function getDataType(rows: any[], column: string) {
-    const values = rows.map((row) => row.data[column]);
+function getDataType(rows: CsvRowWithData[], column: string) {
+    const values = rows.map((row) => row.rowData[column]);
     if (values.every((v) => !isNaN(Number(v)))) return "numeric";
     if (values.every((v) => !isNaN(Date.parse(v)))) return "date";
     return "text";

@@ -11,6 +11,7 @@ generator client {
 
 model CsvFile {
   id            String    @id @default(uuid())
+  userId        String    // User ID for file ownership
   fileName      String
   originalName  String
   uploadedAt    DateTime  @default(now())
@@ -26,6 +27,7 @@ model CsvFile {
   updatedAt     DateTime @updatedAt
 
   @@index([fileName])
+  @@index([userId])
   @@map("csv_files")
 }
 

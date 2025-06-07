@@ -5,11 +5,9 @@ import { v4 as uuidv4 } from 'uuid';
 import { ensureUploadDir } from '@/lib/server/utils';
 import { parse } from 'csv-parse/sync';
 
-export const config = {
-    api: {
-        bodyParser: false,
-    },
-};
+// Use route segment config
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 export async function POST(request: Request) {
     try {

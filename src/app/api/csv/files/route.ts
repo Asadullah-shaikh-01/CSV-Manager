@@ -3,88 +3,13 @@ import prisma from "@/lib/prisma";
 import { cookies } from 'next/headers';
 import { readdir, stat } from 'fs/promises';
 import { join } from 'path';
+import { Prisma } from '@prisma/client';
 
 export async function GET(request: NextRequest) {
-  try {
-    // Get user ID from auth cookie
-    const cookieStore = cookies();
-    const authToken = cookieStore.get('auth_token');
-    
-    if (!authToken) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+  const searchParams = request.nextUrl.searchParams;
+  const listOnly = searchParams.get('listOnly') === 'true';
 
-    const userId = authToken.value;
-    const searchParams = request.nextUrl.searchParams;
-    
-    // Pagination
-    const page = parseInt(searchParams.get('page') || '1');
-    const size = parseInt(searchParams.get('size') || '10');
-    
-    // Filtering
-    const filter = searchParams.get('filter') || '';
-    const tag = searchParams.get('tag') || '';
-    const startDate = searchParams.get('startDate');
-    const endDate = searchParams.get('endDate');
-    const archived = searchParams.get('archived') === 'true';
-    
-    // Sorting
-    const sortBy = searchParams.get('sortBy') || 'uploadedAt';
-    const sortOrder = searchParams.get('sortOrder') || 'desc';
-
-    const skip = (page - 1) * size;
-
-    // Build where clause
-    const where = {
-      userId,
-      isArchived: archived,
-      AND: [
-        { fileName: { contains: filter, mode: 'insensitive' } },
-        tag ? { tags: { has: tag } } : {},
-        startDate ? { uploadedAt: { gte: new Date(startDate) } } : {},
-        endDate ? { uploadedAt: { lte: new Date(endDate) } } : {},
-      ],
-    };
-
-    const [files, totalCount] = await Promise.all([
-      prisma.csvFile.findMany({
-        where,
-        orderBy: { [sortBy]: sortOrder },
-        skip,
-        take: size,
-        include: {
-          _count: {
-            select: { rows: true }
-          }
-        },
-      }),
-      prisma.csvFile.count({ where }),
-    ]);
-
-    // Update lastAccessed timestamp for viewed files
-    await Promise.all(
-      files.map(file =>
-        prisma.csvFile.update({
-          where: { id: file.id },
-          data: { lastAccessed: new Date() },
-        })
-      )
-    );
-
-    return NextResponse.json({
-      files,
-      totalCount,
-      currentPage: page,
-      totalPages: Math.ceil(totalCount / size),
-      pageSize: size,
-    });
-  } catch (err: any) {
-    console.error('Error fetching files:', err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
-  }
-}
-
-export async function LIST() {
+  if (listOnly) {
     try {
         const uploadDir = join(process.cwd(), 'uploads');
         
@@ -130,4 +55,97 @@ export async function LIST() {
             { status: 500 }
         );
     }
+  }
+
+  try {
+    // Get user ID from auth cookie
+    const cookieStore = cookies();
+    const authToken = cookieStore.get('auth_token');
+    
+    if (!authToken) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const userId = authToken.value;
+    
+    // Pagination
+    const page = parseInt(searchParams.get('page') || '1');
+    const size = parseInt(searchParams.get('size') || '10');
+    
+    // Filtering
+    const filter = searchParams.get('filter') || '';
+    const tag = searchParams.get('tag') || '';
+    const startDate = searchParams.get('startDate');
+    const endDate = searchParams.get('endDate');
+    const archived = searchParams.get('archived') === 'true';
+    
+    // Sorting
+    const sortBy = searchParams.get('sortBy') || 'uploadedAt';
+    const sortOrder = (searchParams.get('sortOrder') || 'desc') as 'asc' | 'desc';
+
+    const skip = (page - 1) * size;
+
+    // Build where clause
+    const where: Prisma.CsvFileWhereInput = {
+      userId,
+      isArchived: archived,
+    };
+
+    // Add filter conditions
+    if (filter) {
+      where.fileName = { contains: filter, mode: 'insensitive' as Prisma.QueryMode };
+    }
+
+    if (tag) {
+      where.tags = { has: tag };
+    }
+
+    // Handle date filtering
+    const dateFilter: Prisma.DateTimeFilter = {};
+    if (startDate) {
+      dateFilter.gte = new Date(startDate);
+    }
+    if (endDate) {
+      dateFilter.lte = new Date(endDate);
+    }
+    if (Object.keys(dateFilter).length > 0) {
+      where.uploadedAt = dateFilter;
+    }
+
+    const [files, totalCount] = await Promise.all([
+      prisma.csvFile.findMany({
+        where,
+        orderBy: { [sortBy]: sortOrder },
+        skip,
+        take: size,
+        include: {
+          _count: {
+            select: { rows: true }
+          }
+        },
+      }),
+      prisma.csvFile.count({ where }),
+    ]);
+
+    // Update lastAccessed timestamp for viewed files
+    await Promise.all(
+      files.map(file =>
+        prisma.csvFile.update({
+          where: { id: file.id },
+          data: { lastAccessed: new Date() },
+        })
+      )
+    );
+
+    return NextResponse.json({
+      files,
+      totalCount,
+      currentPage: page,
+      totalPages: Math.ceil(totalCount / size),
+      pageSize: size,
+    });
+  } catch (err: any) {
+    console.error('Error fetching files:', err);
+    return NextResponse.json({ error: err.message }, { status: 500 });
+  }
 } 

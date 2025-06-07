@@ -3,12 +3,20 @@ import { readFile } from 'fs/promises';
 import { join } from 'path';
 import { parse } from 'csv-parse/sync';
 
+interface CsvRecord {
+    [key: string]: string;
+}
+
+interface FieldMappings {
+    [key: string]: string;
+}
+
 export async function POST(
     request: Request,
     { params }: { params: { batchId: string } }
 ) {
     try {
-        const { mappings } = await request.json();
+        const { mappings } = await request.json() as { mappings: FieldMappings };
         const { batchId } = params;
 
         if (!mappings || !batchId) {
@@ -25,13 +33,12 @@ export async function POST(
         // Parse CSV content
         const records = parse(fileContent, {
             columns: true,
-            skip_empty_lines: true,
-            trim: true // Add trim to clean up whitespace
-        });
+            skip_empty_lines: true
+        }) as CsvRecord[];
 
-        // Transform data based on mappings
-        const transformedData = records.map((record: any) => {
-            const transformedRecord: any = {};
+        // Transform and validate all records
+        const transformedData = records.map((record: CsvRecord) => {
+            const transformedRecord: CsvRecord = {};
             Object.entries(mappings).forEach(([systemField, csvColumn]) => {
                 if (csvColumn) {
                     transformedRecord[systemField] = record[csvColumn];
@@ -40,17 +47,23 @@ export async function POST(
             return transformedRecord;
         });
 
-        // Return both the full record count and a preview
+        // Here you would typically:
+        // 1. Validate all records
+        // 2. Generate a preview or summary
+        // 3. Update batch status
+        // 4. Send notifications if needed
+
         return NextResponse.json({
             batchId,
-            recordCount: records.length, // Total number of records in the CSV
-            preview: transformedData.slice(0, 3), // First 3 records for preview
-            status: 'processed'
+            status: 'processed',
+            recordCount: transformedData.length,
+            preview: transformedData.slice(0, 5), // Send first 5 records as preview
+            message: 'Processing completed successfully'
         });
     } catch (error) {
         console.error('Processing error:', error);
         return NextResponse.json(
-            { error: 'Failed to process CSV file' },
+            { error: 'Failed to process CSV data' },
             { status: 500 }
         );
     }
