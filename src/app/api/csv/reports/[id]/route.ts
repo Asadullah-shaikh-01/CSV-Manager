@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { parse } from "papaparse";
+import { unparse } from "papaparse";
 import { CsvRow } from "@prisma/client";
 
 interface CsvRowWithData extends CsvRow {
@@ -86,7 +86,7 @@ export async function POST(
         }
 
         // Convert report data to CSV
-        const csv = parse.unparse(reportData);
+        const csv = unparse(reportData);
         
         return new NextResponse(csv, {
             headers: {
