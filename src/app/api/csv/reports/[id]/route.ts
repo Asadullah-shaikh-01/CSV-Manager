@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { unparse } from "papaparse";
+import { unparse, UnparseConfig } from "papaparse";
 import { CsvRow } from "@prisma/client";
 
 interface CsvRowWithData extends CsvRow {
@@ -29,7 +29,6 @@ interface CustomReport {
 }
 
 type ReportType = 'summary' | 'detailed' | 'custom';
-type ReportData = SummaryReport[] | DetailedReport[] | CustomReport[];
 
 export async function POST(
     req: NextRequest,
@@ -39,6 +38,10 @@ export async function POST(
         const fileId = params.id;
         const searchParams = new URL(req.url).searchParams;
         const reportType = searchParams.get("type") as ReportType;
+
+        if (!reportType) {
+            return NextResponse.json({ error: "Report type is required" }, { status: 400 });
+        }
 
         // Get CSV data
         const csvFile = await prisma.csvFile.findUnique({
@@ -51,7 +54,8 @@ export async function POST(
         }
 
         const rows = csvFile.rows as CsvRowWithData[];
-        let reportData: ReportData = [];
+        let csvContent: string;
+        const config: UnparseConfig = { header: true };
 
         switch (reportType) {
             case "summary": {
@@ -60,7 +64,7 @@ export async function POST(
                     (key) => !isNaN(Number(rows[0].rowData[key]))
                 );
 
-                reportData = numericColumns.map((column) => {
+                const summaryData: SummaryReport[] = numericColumns.map((column) => {
                     const values = rows.map((row) => Number(row.rowData[column]));
                     const sum = values.reduce((a, b) => a + b, 0);
                     const avg = sum / values.length;
@@ -75,13 +79,14 @@ export async function POST(
                         Total: sum,
                     };
                 });
+                csvContent = unparse(summaryData, config);
                 break;
             }
 
             case "detailed": {
                 // Generate detailed analysis
                 const columns = Object.keys(rows[0].rowData);
-                reportData = columns.map((column) => {
+                const detailedData: DetailedReport[] = columns.map((column) => {
                     const uniqueValues = new Set(
                         rows.map((row) => row.rowData[column])
                     );
@@ -92,13 +97,14 @@ export async function POST(
                         HasNulls: rows.some((row) => !row.rowData[column]),
                     };
                 });
+                csvContent = unparse(detailedData, config);
                 break;
             }
 
             case "custom": {
-                // Generate custom analysis (example: data distribution)
+                // Generate custom analysis
                 const customColumns = Object.keys(rows[0].rowData);
-                reportData = customColumns.map((column) => {
+                const customData: CustomReport[] = customColumns.map((column) => {
                     const valueFrequency = getValueFrequency(rows, column);
                     return {
                         Column: column,
@@ -106,22 +112,28 @@ export async function POST(
                         DataType: getDataType(rows, column),
                     };
                 });
+                csvContent = unparse(customData, config);
                 break;
             }
-        }
 
-        // Convert report data to CSV
-        const csv = unparse(reportData);
+            default: {
+                return NextResponse.json(
+                    { error: "Invalid report type" },
+                    { status: 400 }
+                );
+            }
+        }
         
-        return new NextResponse(csv, {
+        return new NextResponse(csvContent, {
             headers: {
                 "Content-Type": "text/csv",
                 "Content-Disposition": `attachment; filename=${csvFile.fileName}-${reportType}-report.csv`,
             },
         });
-    } catch (error: any) {
+    } catch (error) {
+        console.error('Report generation error:', error);
         return NextResponse.json(
-            { error: error.message },
+            { error: error instanceof Error ? error.message : 'Failed to generate report' },
             { status: 500 }
         );
     }
