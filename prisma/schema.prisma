@@ -1,0 +1,45 @@
+// This is your Prisma schema file
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model CsvFile {
+  id            String    @id @default(uuid())
+  fileName      String
+  originalName  String
+  uploadedAt    DateTime  @default(now())
+  columnHeaders String[]  // Store column headers as array
+  rowCount      Int
+  description   String?   // Optional description
+  fileSize      Int      // Size in bytes
+  mimeType      String   // File type
+  rows          CsvRow[] // Relation to rows
+  tags          String[] // Optional tags for filtering
+  isArchived    Boolean  @default(false)
+  lastAccessed  DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([fileName])
+  @@map("csv_files")
+}
+
+model CsvRow {
+  id        String   @id @default(uuid())
+  csvFileId String   // Foreign key to CsvFile
+  csvFile   CsvFile  @relation(fields: [csvFileId], references: [id])
+  rowIndex  Int      // Position in the file
+  rowData   Json     // Actual row data as JSON
+  isValid   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([csvFileId])
+  @@index([rowIndex])
+  @@map("csv_rows")
+} 
