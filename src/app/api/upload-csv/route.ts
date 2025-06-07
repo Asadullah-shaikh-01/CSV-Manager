@@ -3,6 +3,7 @@ import { parse } from "papaparse";
 import prisma from "@/lib/prisma";
 import { cookies } from 'next/headers';
 import type { FileType } from "@/app/types/csvTypes";
+import { Prisma } from "@prisma/client";
 
 export async function POST(request: NextRequest) {
   try {
@@ -72,9 +73,9 @@ export async function POST(request: NextRequest) {
         mimeType: file.type || 'text/csv',
         tags: [], // Initialize with empty tags
         rows: {
-          create: data.map((row: Record<string, unknown>, index: number) => ({
+          create: data.map((row, index) => ({
             rowIndex: index,
-            rowData: row,
+            rowData: row as Prisma.JsonObject,
             isValid: true,
           })),
         },

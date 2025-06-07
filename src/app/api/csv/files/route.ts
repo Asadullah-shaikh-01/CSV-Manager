@@ -5,6 +5,17 @@ import { readdir, stat } from 'fs/promises';
 import { join } from 'path';
 import { Prisma } from '@prisma/client';
 
+// Valid sort fields
+type SortField = 'uploadedAt' | 'fileName' | 'fileSize' | 'lastAccessed';
+type SortOrder = 'asc' | 'desc';
+
+interface FileDetails {
+    id: string;
+    fileName: string;
+    uploadDate: Date;
+    size: number;
+}
+
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const listOnly = searchParams.get('listOnly') === 'true';
@@ -28,7 +39,7 @@ export async function GET(request: NextRequest) {
         const fileDetails = await Promise.all(
             files
                 .filter(file => file.endsWith('.csv'))
-                .map(async (file) => {
+                .map(async (file): Promise<FileDetails> => {
                     const filePath = join(uploadDir, file);
                     const stats = await stat(filePath);
                     const batchId = file.replace('.csv', '');
@@ -69,8 +80,8 @@ export async function GET(request: NextRequest) {
     const userId = authToken.value;
     
     // Pagination
-    const page = parseInt(searchParams.get('page') || '1');
-    const size = parseInt(searchParams.get('size') || '10');
+    const page = Math.max(1, parseInt(searchParams.get('page') || '1'));
+    const size = Math.min(100, Math.max(1, parseInt(searchParams.get('size') || '10')));
     
     // Filtering
     const filter = searchParams.get('filter') || '';
@@ -79,9 +90,17 @@ export async function GET(request: NextRequest) {
     const endDate = searchParams.get('endDate');
     const archived = searchParams.get('archived') === 'true';
     
-    // Sorting
-    const sortBy = searchParams.get('sortBy') || 'uploadedAt';
-    const sortOrder = (searchParams.get('sortOrder') || 'desc') as 'asc' | 'desc';
+    // Sorting with type safety
+    const sortBy = (searchParams.get('sortBy') || 'uploadedAt') as SortField;
+    const sortOrder = (searchParams.get('sortOrder') || 'desc') as SortOrder;
+
+    // Validate sort field
+    if (!['uploadedAt', 'fileName', 'fileSize', 'lastAccessed'].includes(sortBy)) {
+      return NextResponse.json(
+        { error: 'Invalid sort field' },
+        { status: 400 }
+      );
+    }
 
     const skip = (page - 1) * size;
 
@@ -101,15 +120,23 @@ export async function GET(request: NextRequest) {
     }
 
     // Handle date filtering
-    const dateFilter: Prisma.DateTimeFilter = {};
-    if (startDate) {
-      dateFilter.gte = new Date(startDate);
-    }
-    if (endDate) {
-      dateFilter.lte = new Date(endDate);
-    }
-    if (Object.keys(dateFilter).length > 0) {
-      where.uploadedAt = dateFilter;
+    if (startDate || endDate) {
+      const dateFilter: Prisma.DateTimeFilter = {};
+      if (startDate) {
+        const startDateTime = new Date(startDate);
+        if (!isNaN(startDateTime.getTime())) {
+          dateFilter.gte = startDateTime;
+        }
+      }
+      if (endDate) {
+        const endDateTime = new Date(endDate);
+        if (!isNaN(endDateTime.getTime())) {
+          dateFilter.lte = endDateTime;
+        }
+      }
+      if (Object.keys(dateFilter).length > 0) {
+        where.uploadedAt = dateFilter;
+      }
     }
 
     const [files, totalCount] = await Promise.all([
@@ -144,8 +171,17 @@ export async function GET(request: NextRequest) {
       totalPages: Math.ceil(totalCount / size),
       pageSize: size,
     });
-  } catch (err: any) {
-    console.error('Error fetching files:', err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+  } catch (error) {
+    console.error('Error fetching files:', error);
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      return NextResponse.json(
+        { error: 'Database operation failed' },
+        { status: 500 }
+      );
+    }
+    return NextResponse.json(
+      { error: 'An unexpected error occurred' },
+      { status: 500 }
+    );
   }
 } 

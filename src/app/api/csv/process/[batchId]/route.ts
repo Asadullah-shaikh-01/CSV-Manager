@@ -2,14 +2,10 @@ import { NextResponse } from 'next/server';
 import { readFile } from 'fs/promises';
 import { join } from 'path';
 import { parse } from 'csv-parse/sync';
+import { Prisma } from '@prisma/client';
 
-interface CsvRecord {
-    [key: string]: string;
-}
-
-interface FieldMappings {
-    [key: string]: string;
-}
+type CsvRecord = Record<string, string>;
+type FieldMappings = Record<string, string>;
 
 export async function POST(
     request: Request,
@@ -37,10 +33,10 @@ export async function POST(
         }) as CsvRecord[];
 
         // Transform and validate all records
-        const transformedData = records.map((record: CsvRecord) => {
+        const transformedData = records.map((record) => {
             const transformedRecord: CsvRecord = {};
             Object.entries(mappings).forEach(([systemField, csvColumn]) => {
-                if (csvColumn) {
+                if (csvColumn && record[csvColumn] !== undefined) {
                     transformedRecord[systemField] = record[csvColumn];
                 }
             });

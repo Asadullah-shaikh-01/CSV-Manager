@@ -2,13 +2,17 @@ import { NextResponse } from 'next/server';
 import { readFile, unlink } from 'fs/promises';
 import { join } from 'path';
 import { parse } from 'csv-parse/sync';
+import { Prisma } from '@prisma/client';
 
-interface CsvRecord {
-    [key: string]: string;
-}
+type CsvRecord = Record<string, string>;
+type FieldMappings = Record<string, string>;
 
-interface FieldMappings {
-    [key: string]: string;
+interface ImportResponse {
+    batchId: string;
+    status: 'completed' | 'failed';
+    recordCount?: number;
+    message: string;
+    errors?: string[];
 }
 
 export async function POST(
@@ -26,9 +30,17 @@ export async function POST(
             );
         }
 
-        // Read the CSV file
+        let fileContent: string;
         const filePath = join(process.cwd(), 'uploads', `${batchId}.csv`);
-        const fileContent = await readFile(filePath, 'utf-8');
+
+        try {
+            fileContent = await readFile(filePath, 'utf-8');
+        } catch (error) {
+            return NextResponse.json(
+                { error: 'CSV file not found or inaccessible' },
+                { status: 404 }
+            );
+        }
 
         // Parse CSV content
         const records = parse(fileContent, {
@@ -36,37 +48,50 @@ export async function POST(
             skip_empty_lines: true
         }) as CsvRecord[];
 
+        if (!Array.isArray(records) || records.length === 0) {
+            return NextResponse.json(
+                { error: 'CSV file is empty or invalid' },
+                { status: 400 }
+            );
+        }
+
         // Transform and validate all records
-        const transformedData = records.map((record: CsvRecord) => {
+        const transformedData = records.map((record) => {
             const transformedRecord: CsvRecord = {};
             Object.entries(mappings).forEach(([systemField, csvColumn]) => {
-                if (csvColumn) {
+                if (csvColumn && record[csvColumn] !== undefined) {
                     transformedRecord[systemField] = record[csvColumn];
                 }
             });
             return transformedRecord;
         });
 
-        // Here you would typically:
-        // 1. Validate all records
-        // 2. Save to database in a transaction
-        // 3. Update batch status
-        // 4. Send notifications if needed
-
         // Clean up: remove the temporary CSV file
-        await unlink(filePath);
+        try {
+            await unlink(filePath);
+        } catch (error) {
+            console.error('Failed to delete temporary file:', error);
+            // Continue with the response even if cleanup fails
+        }
 
-        return NextResponse.json({
+        const response: ImportResponse = {
             batchId,
             status: 'completed',
             recordCount: transformedData.length,
             message: 'Import completed successfully'
-        });
+        };
+
+        return NextResponse.json(response);
     } catch (error) {
         console.error('Import error:', error);
-        return NextResponse.json(
-            { error: 'Failed to import CSV data' },
-            { status: 500 }
-        );
+        
+        const response: ImportResponse = {
+            batchId: params.batchId,
+            status: 'failed',
+            message: 'Failed to import CSV data',
+            errors: [error instanceof Error ? error.message : 'Unknown error occurred']
+        };
+
+        return NextResponse.json(response, { status: 500 });
     }
 } 

@@ -4,10 +4,32 @@ import { unparse } from "papaparse";
 import { CsvRow } from "@prisma/client";
 
 interface CsvRowWithData extends CsvRow {
-    rowData: {
-        [key: string]: string;
-    };
+    rowData: Record<string, string>;
 }
+
+interface SummaryReport {
+    Column: string;
+    Average: string;
+    Maximum: number;
+    Minimum: number;
+    Total: number;
+}
+
+interface DetailedReport {
+    Column: string;
+    UniqueValues: number;
+    MostCommonValue: string;
+    HasNulls: boolean;
+}
+
+interface CustomReport {
+    Column: string;
+    Distribution: string;
+    DataType: 'numeric' | 'date' | 'text';
+}
+
+type ReportType = 'summary' | 'detailed' | 'custom';
+type ReportData = SummaryReport[] | DetailedReport[] | CustomReport[];
 
 export async function POST(
     req: NextRequest,
@@ -16,7 +38,7 @@ export async function POST(
     try {
         const fileId = params.id;
         const searchParams = new URL(req.url).searchParams;
-        const reportType = searchParams.get("type") as "summary" | "detailed" | "custom";
+        const reportType = searchParams.get("type") as ReportType;
 
         // Get CSV data
         const csvFile = await prisma.csvFile.findUnique({
@@ -29,10 +51,10 @@ export async function POST(
         }
 
         const rows = csvFile.rows as CsvRowWithData[];
-        let reportData: any[] = [];
+        let reportData: ReportData = [];
 
         switch (reportType) {
-            case "summary":
+            case "summary": {
                 // Generate summary statistics
                 const numericColumns = Object.keys(rows[0].rowData).filter(
                     (key) => !isNaN(Number(rows[0].rowData[key]))
@@ -54,8 +76,9 @@ export async function POST(
                     };
                 });
                 break;
+            }
 
-            case "detailed":
+            case "detailed": {
                 // Generate detailed analysis
                 const columns = Object.keys(rows[0].rowData);
                 reportData = columns.map((column) => {
@@ -70,8 +93,9 @@ export async function POST(
                     };
                 });
                 break;
+            }
 
-            case "custom":
+            case "custom": {
                 // Generate custom analysis (example: data distribution)
                 const customColumns = Object.keys(rows[0].rowData);
                 reportData = customColumns.map((column) => {
@@ -83,6 +107,7 @@ export async function POST(
                     };
                 });
                 break;
+            }
         }
 
         // Convert report data to CSV
@@ -102,8 +127,8 @@ export async function POST(
     }
 }
 
-function getMostCommonValue(rows: CsvRowWithData[], column: string) {
-    const frequency: { [key: string]: number } = {};
+function getMostCommonValue(rows: CsvRowWithData[], column: string): string {
+    const frequency: Record<string, number> = {};
     rows.forEach((row) => {
         const value = row.rowData[column];
         frequency[value] = (frequency[value] || 0) + 1;
@@ -113,8 +138,8 @@ function getMostCommonValue(rows: CsvRowWithData[], column: string) {
     )[0];
 }
 
-function getValueFrequency(rows: CsvRowWithData[], column: string) {
-    const frequency: { [key: string]: number } = {};
+function getValueFrequency(rows: CsvRowWithData[], column: string): Record<string, number> {
+    const frequency: Record<string, number> = {};
     rows.forEach((row) => {
         const value = row.rowData[column];
         frequency[value] = (frequency[value] || 0) + 1;
@@ -122,7 +147,7 @@ function getValueFrequency(rows: CsvRowWithData[], column: string) {
     return frequency;
 }
 
-function getDataType(rows: CsvRowWithData[], column: string) {
+function getDataType(rows: CsvRowWithData[], column: string): 'numeric' | 'date' | 'text' {
     const values = rows.map((row) => row.rowData[column]);
     if (values.every((v) => !isNaN(Number(v)))) return "numeric";
     if (values.every((v) => !isNaN(Date.parse(v)))) return "date";
