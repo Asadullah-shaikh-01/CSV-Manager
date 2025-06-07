@@ -40,8 +40,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (!Array.isArray(data) || data.length === 0) {
+      return NextResponse.json(
+        { error: "CSV file is empty or invalid" },
+        { status: 400 }
+      );
+    }
+
+    // Ensure the first row is an object with keys
+    const firstRow = data[0];
+    if (typeof firstRow !== 'object' || firstRow === null) {
+      return NextResponse.json(
+        { error: "Invalid CSV structure" },
+        { status: 400 }
+      );
+    }
+
     // Get column headers from the first row
-    const columnHeaders = Object.keys(data[0]);
+    const columnHeaders = Object.keys(firstRow);
 
     // Save file metadata to database
     const csvFile = await prisma.csvFile.create({
@@ -56,7 +72,7 @@ export async function POST(request: NextRequest) {
         mimeType: file.type || 'text/csv',
         tags: [], // Initialize with empty tags
         rows: {
-          create: data.map((row: any, index: number) => ({
+          create: data.map((row: Record<string, unknown>, index: number) => ({
             rowIndex: index,
             rowData: row,
             isValid: true,
